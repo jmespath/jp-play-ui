@@ -1,0 +1,16 @@
+version: 0.2
+env:
+  variables:
+    CI: "true"
+phases:
+  install:
+    commands:
+      - npm install -g yarn
+      - yarn
+      - yarn run build
+      - "aws s3 sync --delete build/ s3://${APP_BUCKET_NAME}/ --acl public-read"
+artifacts:
+  type: zip
+  files:
+    - "**/*"
+  base-directory: build

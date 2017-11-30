@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  CertificateArn:
+    Type: String
+    Description: ACM Certificate ARN (must be in us-east-1)
+  DeployerAccountId:
+    Type: String
+    Description: AccountId of deployment account
+Resources:
+  AccessLogs:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: "LogDeliveryWrite"
+  OriginBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      WebsiteConfiguration:
+        IndexDocument: "index.html"
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessLogs
+        LogFilePrefix: "jp-query-s3-origin/"
+  OriginBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref OriginBucket
+      PolicyDocument:
+        Statement:
+        - Action:
+          - "s3:*"
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Join:
+                - ''
+                - - 'arn:aws:iam::'
+                  - Ref: DeployerAccountId
+                  - ':root'
+          Resource:
+          - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: OriginBucket
+              - /*
+        - Action:
+          - s3:ListBucket
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Join:
+                - ''
+                - - 'arn:aws:iam::'
+                  - Ref: DeployerAccountId
+                  - ':root'
+          Resource:
+          - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: OriginBucket
+        Version: '2012-10-17'
+  MainDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+        - DomainName:
+            Fn::Sub: ${OriginBucket}.s3-us-west-2.amazonaws.com
+          Id: S3Origin
+          CustomOriginConfig:
+            HTTPPort: 80
+            HTTPSPort: 443
+            OriginProtocolPolicy: "match-viewer"
+            OriginReadTimeout: 30
+            OriginKeepaliveTimeout: 5
+            OriginSSLProtocols:
+              - "TLSv1"
+              - "TLSv1.1"
+              - "TLSv1.2"
+        Enabled: true
+        DefaultRootObject: index.html
+        Logging:
+          Bucket:
+            Fn::Sub: ${AccessLogs}.s3.amazonaws.com
+          Prefix: "jp-query-cfn-logs/"
+        Aliases:
+        - play.jmespath.org
+        DefaultCacheBehavior:
+          AllowedMethods:
+          - GET
+          - HEAD
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: allow-all
+        PriceClass: PriceClass_100
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: "none"
+        ViewerCertificate:
+          MinimumProtocolVersion: "TLSv1.1_2016"
+          SslSupportMethod: "sni-only"
+          AcmCertificateArn: !Ref CertificateArn
+Outputs:
+  OriginBucket:
+    Value: !Ref OriginBucket

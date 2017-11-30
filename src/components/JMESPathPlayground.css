@@ -1,0 +1,12 @@
+.JP-expr {
+  font-family: Monaco, Menlo, 'Ubuntu Mono', Consolas, source-code-pro, monospace;
+
+}
+
+.JP-ast {
+  margin-top: 30px;
+}
+
+.json-box {
+  border: 1px solid #DDD;
+}

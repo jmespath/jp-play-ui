@@ -1,0 +1,26 @@
+{
+  "name": "jp-play-ui",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "bootstrap": "^3.3.7",
+    "jmespath": "^0.15.0",
+    "query-string": "^5.0.1",
+    "react": "^16.0.0",
+    "react-ace": "^5.5.0",
+    "react-bootstrap": "^0.31.5",
+    "react-copy-to-clipboard": "^5.0.1",
+    "react-dom": "^16.0.0",
+    "react-redux": "^5.0.6",
+    "react-scripts": "1.0.17",
+    "redux": "^3.7.2",
+    "redux-thunk": "^2.2.0",
+    "whatwg-fetch": "^2.0.3"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test --env=jsdom",
+    "eject": "react-scripts eject"
+  }
+}

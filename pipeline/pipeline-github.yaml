@@ -1,0 +1,263 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  ApplicationName:
+    Default: jp-play-ui
+    Description: Enter the name of your application.
+    Type: String
+  DevS3BucketName:
+    Description: S3 bucket where static assets are uploaded
+    Type: String
+  ProdS3BucketName:
+    Description: S3 Bucket for production static assets
+    Type: String
+  CodeBuildImage:
+    Default: aws/codebuild/nodejs:6.3.1
+    Description: Name of codebuild image to use.
+    Type: String
+  GithubPersonalToken:
+    Description: Personal access token for github repo access
+    Type: String
+  DevRestApiUrl:
+    Description: URL of backend Rest API
+    Type: String
+  ProdRestApiUrl:
+    Description: URL of backend Rest API
+    Type: String
+Resources:
+  DevAppPackageBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+        - Name: APP_BUCKET_NAME
+          Value:
+            Ref: DevS3BucketName
+        - Name: REACT_APP_JP_API_URL
+          Value:
+            Ref: DevRestApiUrl
+        - Name: NODE_ENV
+          Value: dev
+        Image:
+          Ref: CodeBuildImage
+        Type: LINUX_CONTAINER
+      Name:
+        Fn::Sub: ${ApplicationName}-build
+      ServiceRole:
+        Fn::GetAtt: CodeBuildRole.Arn
+      Source:
+        Type: CODEPIPELINE
+  ProdAppPackageBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+        - Name: APP_BUCKET_NAME
+          Value:
+            Ref: ProdS3BucketName
+        - Name: REACT_APP_JP_API_URL
+          Value:
+            Ref: ProdRestApiUrl
+        - Name: NODE_ENV
+          Value: production
+        Image:
+          Ref: CodeBuildImage
+        Type: LINUX_CONTAINER
+      Name:
+        Fn::Sub: ${ApplicationName}-prod-build
+      ServiceRole:
+        Fn::GetAtt: CodeBuildRole.Arn
+      Source:
+        Type: CODEPIPELINE
+  AppPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Location:
+          Ref: ArtifactBucketStore
+        Type: S3
+      Name:
+        Fn::Sub: ${ApplicationName}-pipeline
+      RoleArn:
+        Fn::GetAtt: CodePipelineRole.Arn
+      Stages:
+      - Actions:
+        - ActionTypeId:
+            Category: Source
+            Owner: ThirdParty
+            Provider: GitHub
+            Version: 1
+          Configuration:
+            Branch: master
+            OAuthToken:
+              Ref: GithubPersonalToken
+            Owner: jmespath
+            PollForSourceChanges: true
+            Repo: jp-play-ui
+          Name: Source
+          OutputArtifacts:
+          - Name: SourceRepo
+          RunOrder: 1
+        Name: Source
+      - Actions:
+        - ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: 1
+          Configuration:
+            ProjectName:
+              Ref: DevAppPackageBuild
+          InputArtifacts:
+          - Name: SourceRepo
+          Name: CodeBuild
+          OutputArtifacts:
+          - Name: StaticAssets
+          RunOrder: 1
+        Name: Build
+      - Actions:
+        - ActionTypeId:
+            Category: Approval
+            Owner: AWS
+            Provider: Manual
+            Version: '1'
+          Configuration:
+            CustomData: Approve to prod
+          InputArtifacts: []
+          Name: ApproveProdDeploy
+          RunOrder: 1
+        Name: ApproveProd
+      - Actions:
+        - ActionTypeId:
+            Category: Build
+            Owner: AWS
+            Provider: CodeBuild
+            Version: '1'
+          InputArtifacts:
+          - Name: SourceRepo
+          Configuration:
+            ProjectName: !Ref ProdAppPackageBuild
+          Name: BuildAndDeployToProd
+          RunOrder: 1
+        Name: ProdBuildAndDeploy
+  ArtifactBucketStore:
+    Type: AWS::S3::Bucket
+  DevCodeBuildPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Effect: Allow
+          Resource: '*'
+        - Action:
+          - s3:GetObject
+          - s3:GetObjectVersion
+          - s3:PutObject
+          - s3:PutObjectAcl
+          - s3:DeleteObject
+          - s3:AbortMultipartUpload
+          Effect: Allow
+          Resource:
+          - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: DevS3BucketName
+              - /*
+          - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: ProdS3BucketName
+              - /*
+          - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: ArtifactBucketStore
+              - /*
+        - Action:
+          - s3:ListBucket
+          Effect: Allow
+          Resource:
+          - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: DevS3BucketName
+          - Fn::Join:
+            - ''
+            - - 'arn:aws:s3:::'
+              - Ref: ProdS3BucketName
+        Version: '2012-10-17'
+      PolicyName: DevCodeBuildPolicy
+      Roles:
+      - Ref: CodeBuildRole
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - codebuild.amazonaws.com
+        Version: '2012-10-17'
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - codepipeline.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - s3:GetObject
+            - s3:GetObjectVersion
+            - s3:GetBucketVersioning
+            - s3:CreateBucket
+            - s3:PutObject
+            - s3:PutBucketVersioning
+            Effect: Allow
+            Resource: '*'
+          - Action:
+            - cloudwatch:*
+            - iam:PassRole
+            Effect: Allow
+            Resource: '*'
+          - Action:
+            - lambda:InvokeFunction
+            - lambda:ListFunctions
+            Effect: Allow
+            Resource: '*'
+          - Action:
+            - codebuild:BatchGetBuilds
+            - codebuild:StartBuild
+            Effect: Allow
+            Resource: '*'
+          Version: '2012-10-17'
+        PolicyName: DefaultPolicy
+Outputs:
+  CodeBuildRoleArn:
+    Value:
+      Fn::GetAtt: CodeBuildRole.Arn
+  CodePipelineRoleArn:
+    Value:
+      Fn::GetAtt: CodePipelineRole.Arn
+  S3PipelineBucket:
+    Value:
+      Ref: ArtifactBucketStore
